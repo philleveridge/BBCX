@@ -1,0 +1,1559 @@
+<script src="./prog.js" type=text/javascript"></script>
+
+<h2>BBCX </h2>
+     <table border="0">
+         <tr>
+             <td><b>The Monitor</b></td>
+
+
+             <td>
+                 <b>Dump Page : <label id=pagenum value='1'>1</></b>
+
+                     <input name="page" type="radio" onclick="changePage(0);">
+                     <input name="page" type="radio" onclick="changePage(1);" checked=1>
+                     <input name="page" type="radio" onclick="changePage(2);">
+                     <input name="page" type="radio" onclick="changePage(3);">
+					 
+
+                    <input id="octal" type="checkbox"  onchange="setoctal();"/> Octal ?
+             </td>
+         </tr>
+
+
+         <tr>
+             <td><textarea id="monitor" rows=12 cols="40"></textarea> </td>
+			 <td>
+			 <textarea id="dump1" rows="6" cols="50">001 00000000000000000000000000</textarea>
+			 <textarea id="dump2" rows="6" cols="50">007 00000000000000000000000000</textarea>
+			 </td>
+         </tr>
+
+         <tr>
+             <td>
+                 <button name=step onclick="singleexecute();">Step</button>
+                 
+                 <select id="tape"  onchange="settape();">
+				 <option>1</option> 
+				 <option>2</option>
+				 <option>3</option> 
+				 <option>4</option>
+				 <option>5</option>
+				 <option>6</option>
+				 <option>7</option>
+				 <option>8</option>
+				 </select>  Select TAPE
+             </td>
+             <td></td>
+         </tr>
+		 
+		<tr>
+             <td><textarea id="program" rows=8 cols="40">
+
+			 </textarea> </td>
+         </tr>
+
+     </table>
+	 
+	 <p id="demo"></p>
+	 <a href="BBCX1.4.pdf">Access manual </a>
+<script >
+/*
+
+*/
+Fncdata = 	"NIL --------" + "OR  YYYYYYYY" + "NEQVYYYYYYYY" + "AND YYYYYYYY" + "ADD YYYYYYYY" +
+            "SUBTYYNNYYNN" + "MULTYYNNYYNN" + "DVD YYNNYYNN" + "TAKE----YYYY" + "TSTR----YNNN" +
+            "TNEG----YYNN" + "TNOT----YYYY" + "TTYP----YYYY" + "TTYZ----YYYY" + "TTTT--------" + 
+            "TOUT----YNNY" + "SKIP--------" + "SKAEYYYYYYYY" + "SKANYYYYYYYY" + "SKETYYYYYYYY" + 
+            "SKALYYNNYYNN" + "SKAGYYNNYYNN" + "SKEDYYNNYYNN" + "SKEIYYNNYYNN" + "SHL YYYYYNNN" + 
+            "ROT YYYYYNNN" + "DSHLYYYYYNNN" +
+            "DROTYYYYYNNN" + "POWRYYNNYYNN" + "DMUTYNNNYNNN" + "DIV YNNNYNNN" + "DDIVYNNNYNNN" + 
+            "SWAP--------" + "ORX YYYYYYYY" + "NEQXYYYYYYYY" + "ANDXYYYYYYYY" + "ADDXYYYYYYYY" + 
+            "SUBXYYNNYYNN" + "MULXYYNNYYNN" + "DVDXYYNNYYNN" + "PUT YYYY----" + "PSQUYNNN----" + 
+            "PNEGYYNN----" + "PNOTYYYY----" + "PTYPYNNN----" + "PTYZYYYY----" + "PPPP--------" + 
+            "PIN --------" + "JUMP----NNYN" + "JEZ YYYYNNYN" + 
+            "JNZ YYYYNNYN" + "JAT YYYYNNYN" + "JLZ YYNNNNYN" + "JGZ YYNNNNYN" + "JZD YYNNNNYN" + 
+            "JZI YYNNNNYN" + "DECR----YYNN" + "INCR----YYNN" + "MOCPNNNNNNNN" + "MOCSNNNNNNNN" + 
+            "DBYEYYYYYYYY" + "    --------" + "EXEC----NNYN" + "EXTA--------";
+                
+	const Fncext= 	"SQRTLN  EXP READPRITSIN COS TAN ATN STOPLINEINT " + 
+					"FRACFLOTCAPNPAGERND ABS BINYFINDDATETIME";
+
+	const Cmap 	= 	"&ABCDEFGHIJKLMNOPQRSTUVWXYZ'<>{}0123456789.~+-()[]*/=#\`?\":;, £$";
+	
+	const MOCP	= 	"0 10 111010" 
+	const MOCS	= 	"0 10 111011" 
+	const INTZERO =	"0 00 000000000000000000000000"
+	
+	const pages = new Array(8)
+	
+	var kbd 	= ""
+	var prompt 	= "* "
+	var databuf = ""
+	var cpg		= 1	
+	var halt	= false;
+	var foctal  = 0
+	var topostack=1023;
+	
+	function setoctal() {
+		foctal  = document.getElementById("octal").checked
+		
+		document.getElementById("dump1").innerHTML  = dump_memory(1,15);
+		document.getElementById("dump2").innerHTML  = dump_memory(16, 1008);
+
+	}
+	
+	function octaltoword(s) {
+		// P12345678
+		var word=""
+		if (s[0]=="I") word="0 00 "
+		if (s[0]=="F") word="0 01 "
+		if (s[0]=="P") word="0 10 "
+		if (s[0]=="S") word="0 11 "
+		
+		for (var i=1; i<=8; i++) {
+			word += tobinary(s[i],3)
+		}
+		return word			
+	}
+	
+	function print_prompt()
+	{
+		document.getElementById("dump1").innerHTML  = dump_memory(1,15);
+		document.getElementById("dump2").innerHTML  = dump_memory(16, 1008);
+		print_mon(prompt)
+	}
+	
+	function print_mon(s) {
+			document.getElementById('monitor').value += s; 
+			setTimeout(function()
+			{
+				var textArea = document.getElementById('monitor');
+				textArea.scrollTop = textArea.scrollHeight;
+			}, 10);
+	}
+	
+	function setSelectionRange(input, selectionStart, selectionEnd) {
+	  if (input.setSelectionRange) {
+		input.focus();
+		input.setSelectionRange(selectionStart, selectionEnd);
+	  }
+	  else if (input.createTextRange) {
+		var range = input.createTextRange();
+		range.collapse(true);
+		range.moveEnd('character', selectionEnd);
+		range.moveStart('character', selectionStart);
+		range.select();
+	  }
+	}
+
+	function setCaretToPos (input, pos) {
+	   setSelectionRange(input, pos, pos);
+	}
+	
+	function get_memory(page, addr) {
+		debug_out("get("+page+","+addr+")->"+ pages[page][addr])
+		
+		if (addr>0 && addr<1024)
+			return pages[page][addr]
+		return INTZERO
+	}
+	
+	function eget_memory(page, addr) {	
+		if (page !=0 && addr==6) {
+			// POP hardware stack
+			debug_out("POP("+page+","+addr+")->"+ pages[page][addr])
+			var pw = pages[page][6]
+			var ptr = parseInt(pw.substr(19,10),2)+1
+			var word = pages[page][ptr]
+			pages[page][6]= pages[page][6].substr(0,19) + tobinary(ptr,10)
+			return word
+		}
+		else
+			return get_memory(page,addr)
+	}
+	
+	function put_memory(page, addr, v) {
+		debug_out("put("+page+","+addr+")<-"+ v)
+		
+		if (addr>0 && addr<1024)
+			pages[page][addr] = v
+	}
+	
+	function eput_memory(page, addr, v) {	
+		if (page !=0 && addr==6) {
+			// PUSH hardware stack
+			debug_out("PUSH("+page+","+addr+")<-"+ v)
+			var pw = pages[page][6]
+			var ptr = parseInt(pw.substr(19,10),2)
+			pages[page][ptr] = v
+			pages[page][6]= pages[page][6].substr(0,19) + tobinary(ptr-1,10)	
+		}
+		else
+			put_memory(page,addr,v)
+	}
+	
+	function clr_memory(){
+		
+		var i,j; 
+		for (j=0; j<4; j++) {
+			pages[j] = new Array(1024)
+			for (i=0; i<1024; i++) { 
+				pages[j][i] = INTZERO; 
+			}
+		}
+		put_memory(0,16,assembler("\"ZERO\""))
+		topostack=1023
+		lastline=16
+	} 
+	
+	function dump_memory(a1, n) {
+		var str=""; var i; 
+		
+		if (foctal) {
+			for (i=a1; i< a1+n; i++) {
+				if (pages[cpg][i].substr(2,2) == "00" ) soctal = "(I"
+				if (pages[cpg][i].substr(2,2) == "01" ) soctal = "(F"
+				if (pages[cpg][i].substr(2,2) == "10" ) soctal = "(P"
+				if (pages[cpg][i].substr(2,2) == "11" ) soctal = "(S"
+
+				sbin = pages[cpg][i].substr(5)
+
+				for (var ch=0; ch<sbin.length; ch+=3)
+					soctal += parseInt(sbin.substr(ch,3),2)
+				str += ("000" + i).slice(-3) + " " + pages[cpg][i].substr(0,2) + soctal + ") " + decompile(pages[cpg][i],0) + "\n"
+			}
+		}		
+		else
+		{			
+			for (i=a1; i< a1+n; i++) {
+				str += ("000" + i).slice(-3) + " " + pages[cpg][i] + " " + decompile(pages[cpg][i],0) + "\n"
+			}
+		}
+		return str.slice(0,-1);
+	}
+	
+	function put_literal(s) {
+		for (var i=1023; i>topostack; i--)
+		{
+			// check if literal already exists
+			if (s==pages[cpg][i])
+				return i;
+		}
+		put_memory(cpg, topostack, s)
+		r=topostack
+		topostack -=1
+		return r
+	}
+		
+
+	function changePage(n) {
+		document.getElementById("pagenum").innerHTML  =	n
+		cpg=n
+
+		document.getElementById("dump1").innerHTML  = dump_memory(1,15);
+		document.getElementById("dump2").innerHTML  = dump_memory(16, 1007);		
+	}
+	
+	function isNumeric(str) {
+		return !isNaN(str)
+	}
+	
+	function tobinary(n, d) {
+		//needs to handle + and - numbers
+		// n= number, d = number of digit (size of word)
+		var i
+		var s="";
+		var sgn=1
+		if (n<0) {
+			n=(-n-1)
+			sgn=-1
+		}
+		for (i=0; i<d; i++) {
+			if (n % 2 == 1) {
+				s = "1" + s
+				n=n-1
+			}
+			else
+				s = "0" + s
+			n=n/2
+		}		
+		if (sgn==-1) {
+			s=notit(s)		
+		}
+		return s
+	}
+	
+	function fromBinary(s, f){
+		//string of digit, f = flag for twos complement
+		var n=0
+		var sgn=1
+		
+		if (f && s[0]=="1") {
+			sgn=-1
+			s=notit(s)
+		}
+		for (i=0; i<s.length; i++) {
+			n=n*2
+			if (s.charAt(i)=="1") 
+				n=n+1
+		}
+		if (sgn<0) { // 2s complement
+			n=-n-1
+		}
+		return n
+	}
+	
+	function notit(str) {
+		var tc=""
+		for (var i = 0 ;i<str.length; i++) {
+			if (str[i]=="1") tc += "0"; else tc += "1"
+		}
+		return tc
+	}
+	
+	function mathsop(op,a,b) {
+		ta = a.substr(2,2)		
+		tb = b.substr(2,2)
+		
+		if (op==5) { // AND
+			return bit_ops(a,b, 1)
+		}
+		
+		if (op==6) { // OR
+			return bit_ops(a,b, 2)
+		}
+		
+		if (op==7) { // XOR                            
+			return bit_ops(a,b, 3)
+		}	
+		
+		if (op==11) { // NEG
+			return bit_ops(a,b, 4)
+		}
+		
+		if (op==12) { // SHL
+			var t= a.substr(5)
+			n  = fromBinary(b.substr(6),true)
+			if (n>0 && n< 24) {
+				return a.substr(0,5) + a.substr(5+n,24-n) + "000000000000000000000000000".substr(0,n)
+			}
+			else if (n<0 && n>-24) {
+				return  a.substr(0,5)+ "000000000000000000000000000".substr(0,-n) + a.substr(5,24+n)
+			}
+			else	
+				return a;			
+		}		
+		if (op==13) { // ROT
+			var t= a.substr(5)
+			n  = fromBinary(b.substr(6),true)
+			if (n>0 && n< 24) {
+				return a.substr(0,5) + a.substr(5+n,24-n) + a.substr(5,n)
+			}
+			else if (n<0 && n>-24) {
+				return  a.substr(0,5)+ a.substr(29+n,-n) + a.substr(5,24+n)
+			}
+			else	
+				return a;
+		}
+		
+		if (ta=="10" && tb== "00") {
+			ins= a.substr(0,19)
+			a  = parseInt(a.substr(19),2)
+			b  = parseInt(b.substr(6),2)
+			switch (op) {
+			case 1: // add
+				return ins + tobinary(a + b,10)
+			case 2: // sub
+				return ins + tobinary(a - b,10)
+			}
+		}
+
+		if (ta=="00" && tb== "00") {
+			a  = parseInt(a.substr(6),2)
+			b  = parseInt(b.substr(6),2)
+			switch (op) {
+			case 1: // add
+				return "0 00 " + tobinary(a + b,24)
+			case 2: // sub
+				return "0 00 " + tobinary(a - b,24)
+			case 3: // mult
+				return "0 00 " + tobinary(a * b,24)
+			case 4: // div
+				if (b!=0) {
+					var x= Math.floor(a / b)
+					return "0 00 " + tobinary(x,24)
+				}
+				else return INTZERO;
+			case 10: // mod
+				if (b!=0) {
+					var x= a % b
+					return "0 00 " + tobinary(x,24)
+				}
+				else return INTZERO;
+			case 8:	
+				return "0 00 " + tobinary(Math.pow(a , b),24)
+			case 20: //SQRT
+				return "0 00 " + tobinary(Math.sqrt(a),24)
+			}
+		}
+		if (ta=="01") {	
+			a = fword_to_float(a)
+			if (tb=="00")
+				b  = parseInt(b.substr(6),2)
+			else if (tb=="01")
+				b = fword_to_float(b)
+			else
+				return 	"0 00 000000000000000000000000"	
+			
+			switch (op) {
+			case 1: // add
+				return float_to_fword(a + b)
+			case 2: // sub
+				return float_to_fword(a - b)
+			case 3: // mult
+				return float_to_fword(a * b)
+			case 4: // dvd
+				return float_to_fword(a / b)
+			case 8: // pow
+				return float_to_fword(Math.pow(a, b))
+			case 20: //SQRT
+				return float_to_fword(Math.sqrt(a))
+			}
+		}		
+		return 	"0 00 000000000000000000000000"			
+	}
+	
+	function bit_ops(s1, s2, op ) {
+    var i
+    var bit_ops = s1.substr(0,5)
+    
+    for (i = 5 ;i<s1.length; i++) {                                             
+        var a = (s1.substr(i, 1) == "1")
+        var b = (s2.substr(i, 1) == "1")
+        var bit = "0"
+        switch (op) {
+        case 1: // AND
+            if (a && b)  bit = "1";
+			break;
+        case 2: // OR
+            if (a || b)  bit = "1";
+			break;
+        case 3: // XOR
+            if ((a && !b) || (!a && b))  bit = "1";
+			break;
+        case 4: // NOT
+            if (!a)  bit = "1";
+			break;
+        }   
+        bit_ops = bit_ops + bit
+    }
+	return bit_ops
+}
+	
+	function float_to_fword(n) {
+		/*format 1 signbit, 7 bit exponent, 16 bit mantisa */
+		var expo = "1000001"
+		var s
+		if (n < 0) {
+			n = -n
+			s = -1
+		} else {
+			s = 1
+		}
+		var e = 0
+		for (var i = 0; i<= 64; i++) {
+			if  (n >= 1) {
+				e = e + 1
+				n = n / 2
+			}
+			if ( n < 0.5) {
+				e = e - 1
+				n = n * 2
+			}
+		}
+	
+		expo = tobinary(64 + e, 7)
+		
+		n = n - 0.5
+		m = 0.25
+		mant = ""
+		
+		for  (i = 1; i<=16; i++) {
+			if (n >= m) {
+				mant = mant + "1"
+				n = n - m
+			} else {
+				mant = mant + "0"
+			}
+			m = m / 2
+		}
+				
+		if (s < 0) {
+			f_2_b = "0 01 1" + notit(expo) + mant
+		}
+		else {
+			f_2_b = "0 01 0" + expo + mant
+		}
+		return f_2_b
+	}	
+	
+	function fword_to_float(num) {
+		var f = 0.25
+		var s,r
+		if ( num.substr(2, 2) != "01") { 
+			return 0.0;
+		}
+		
+		var expo = num.substr(5, 8)
+	
+		if  (expo[0] == "1") { 
+			expo=notit(expo)
+			s = -1.0
+		} else {
+			s = 1.0
+		}
+			
+		var a = fromBinary(expo, false) 
+		var m = 0.5
+		
+		var mant = num.substr(13, 16)
+		//console.log("mant="+mant)
+		
+		for (var i = 1; i<=16; i++) {
+			if ( num.substr(12+i, 1)== "1") {
+				m = m + f
+			}
+			f = f / 2
+		}	
+		//console.log("m="+m+", s="+s+", a="+a)
+		r = s * Math.pow(2.0,(a - 64)) * m;
+		return r
+	}
+	
+	function str_to_sword(s) {
+		var i
+		var str=""
+		var msg
+		if (s.length>4) s=s.substr(0,3) + s.slice(-1)
+		for (i=0; i<s.length; i++) {
+			var n=Cmap.indexOf(s.charAt(i))
+			if (n>=0)
+				msg = tobinary(n,6);
+			else
+				msg = "000000";
+			str = str+ msg
+		}
+		str += "000000000000000000000000"
+		str = "0 11 " + str.substr(0,24)
+		return str
+	}
+	
+	function sword_to_str(s) {				
+		var str= "" ; 
+		for (var i=0; i<4; i++) {
+			n = s.substr(5+i*6, 6)
+			str += Cmap.substr(parseInt(n,2),1)
+		}
+		return str
+	}
+
+	function sleep(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
+	}
+	
+	var dbg=0
+	function debug_out(s) {
+		if (dbg==1) console.log("[" + s +"]\n") 
+	}
+	
+	var ln	
+	
+	var ss=0
+	
+	function singleexecute(){
+		var m
+		ln = parseInt(get_memory(cpg, 7).substr(19,10),2) // SCR		
+		print_mon("L= " + ln)
+		ss=1
+		m=execute()
+		
+		if (m=="READ") {
+			prompt="DATA* "	
+			print_prompt()
+			m=""
+			return
+		}		
+		document.getElementById("dump1").innerHTML  = dump_memory(1,15);
+		document.getElementById("dump2").innerHTML  = dump_memory(16, 1008);
+		
+		print_mon( m +"\n" )
+		ss=0
+		return 	
+	}
+	
+	async function do_execute() {
+		var m="OK"			
+		while (m.substr(0,1) != "?") {					
+			m=execute()  //  
+
+			if (m=="STOP" || m=="READ" || ss==1)
+				return ""
+	
+			if (halt) {
+				halt=false;
+				print_mon( "ESC" +"\n")
+				return 
+			}
+			
+			await sleep(20)
+			
+			if (m!= "") print_mon( m +"\n") 
+		}
+		return
+	}
+	
+	function execute() {
+		//1. Get current instruction pointed at by SCR
+		//2. Increment SCR
+		//3. If IBIT set FETCH content of store as indicted by adr and pagebit
+		//4. FETCH content of index register
+		//5. Calculated Address of store
+		//6. FETCH memory (except for all PUT type operations)
+		//7. FETCH acc    (except for all TAKE type operation and EXEC function)
+		//8. Perform function 
+		//9. Store result in ACC
+		//10.Store result in calculated Address
+		
+		var ln = parseInt(get_memory(cpg, 7).substr(19,10),2) // SCR			
+		var pword = get_memory(cpg,ln)
+		
+		if (pword[0]=="1") { // monitor bit set
+			print_mon( "** TRACE L="+ ln)
+			return "?"
+		}
+		
+		if ((typeof pword != "string") || (pword.substr(2,2) != "10")) {
+			print_mon( "?INSTRUCTION INVALID? L="+ ln)
+			return "?"
+		}	
+
+		dbg=1;debug_out("<"+ln+" : " + pword + ">"); dbg=0;
+		put_memory(cpg, 7, MOCP + "00000000" + tobinary(ln+1,10)) // SCR MOCKP <ln>
+				
+		var ins = parseInt(pword.substr(5,6),2)
+		var acc = parseInt(pword.substr(11,3),2)
+		var irg = parseInt(pword.substr(14,3),2)
+		var adr = parseInt(pword.substr(19,10),2)
+		var ibit= pword.substr(17,1)
+		var pbit= pword.substr(18,1)
+		
+		var pn  = cpg
+		var bpw = 0
+		var bpb = 0
+		var bnum= 0
+								
+		if (pbit != 0) { //  203'
+			pn = parseInt(get_memory(cpg,8).substr(27,2),2)
+		}
+							
+		if (ibit== 0 && irg != 0) { // (5)
+			adr = adr + parseInt(get_memory(cpg,irg).substr(6),2)
+		}
+		
+		if (ibit != 0) { //  indirect bit set *203
+			var oadr = adr
+			var sw=eget_memory(pn,adr)  // MOCP or MOCS
+			
+			//console.log(ln + decompile(sw))
+			
+			adr = parseInt(sw.substr(19,10),2)	
+			
+			var iibit=sw.substr(17,1)						
+			var bcod=parseInt(sw.substr(11,3),2)
+			bnum=parseInt(sw.substr(14,3),2)
+			
+			if (iibit == "1") {
+				//byte based addressing 2,*203(5)  -
+				if (bcod==0)  {bpw=1, bpb=24;}
+				else if (bcod==2)  {bpw=3, bpb=8;}
+				else if (bcod==3)  {bpw=4, bpb=6;}
+				else if (bcod==5)  {bpw=5, bpb=3;}
+				
+				adr += Math.floor(bnum / bpw)
+				
+				if (sw.substr(0,11)==MOCS) {
+					//INCREMENT BYTE pointer (and if nessary address pointer)
+					if (((bnum+1) % 8)==0)
+						sw = sw.substr(0,19) + tobinary(adr+1,10) 
+					sw = sw.substr(0,14) + tobinary((bnum + 1) % 8,3) +sw.substr(17)
+					put_memory(pn, oadr, sw); 
+				}			
+			}
+			else
+			{
+				adr = adr + parseInt(get_memory(cpg,irg).substr(6),2)
+				
+				if (sw.substr(0,11)==MOCS) { //INCREMENT MOCS pointer
+					sw = sw.substr(0,19) + tobinary(adr+1,10) 
+					put_memory(pn,oadr, sw);  
+					console.log("sw="+sw)					
+				}
+			}
+		}
+	
+		var ca =""
+		if (!(ins >= 8 && ins <= 15))	
+			ca = eget_memory(cpg,acc);  // ommited for TAKE ops and EXEC code
+		
+		var cr = ""
+		if (!(ins >=40 && ins<= 47)) 	
+			cr = eget_memory(pn,adr)	// ommited for PUT ops and EXTA code
+		
+		if (ibit != 0 && bpb != 0)		// byte based access
+		{
+			cr = INTZERO.substr(0,29-bpb) + cr.substr(5+ (bnum % bpw)*bpb, bpb)
+			console.log("cr="+cr)
+		}
+			
+		var r =""
+		var ra=""
+		
+		var a=parseInt(ca.substr(5),2)
+		
+		switch(ins) {
+		case 0b000000: 			// NIL
+			break;
+		case 1: 				// OR	
+			ra = mathsop(6,ca,cr)	
+			break;
+		case 2: 				// NEQV	
+			ra = mathsop(7,ca,cr)		
+			break;
+		case 3: 				// AND	
+			ra = mathsop(5,ca,cr)	
+			break;
+		case 4: 				// ADD	
+			ra = mathsop(1,ca,cr)	
+			break;
+		case 5: 				// SUBT
+			ra = mathsop(2,ca,cr)	
+			break;
+		case 6: 				// MULT
+			ra = mathsop(3,ca,cr)	
+			break;
+		case 7: 				// DVD
+			ra = mathsop(4,ca,cr)
+			break;
+		case 8: 				// TAKE
+			ra = cr
+			break;
+		case 0b001001:			// TSTR
+			ra = cr
+			if (cr.substr(2,2)=="00") {
+				if (cr.substr(5,1)=="1")
+					put_memory(cpg,acc-1, "0 00 111111111111111111111111")
+				else
+					put_memory(cpg,acc-1, "0 00 000000000000000000000000")
+			}
+			break;
+		case 10: 				// TNEG
+			ra = mathsop(2, "0 00 000000000000000000000000", cr)
+			break;
+		case 11: 				// TNOT
+			ra = mathsop(11, cr, cr)
+			break;
+		case 12: 				// TTYP
+			ra = "0 00 0000000000000000000000" + cr.substr(2,2)
+			break;
+		case 13: 				// TTYZ
+			ra = "0 00 " + cr.substr(5)
+			break;
+		case 15:				// TOUT
+			print_mon(Cmap.substr(parseInt(cr.slice(-6),2),1))
+			ra = cr
+			break;	
+		case 0b010000: 				// SKIP
+			put_memory(cpg, 7, MOCP + "00000000" + tobinary(ln+2,10)) // SCR +2
+			break;
+		case 0b010001: 				// SKAE
+			if (ca == cr) 
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(ln+2,10)) // SCR +2
+			break;
+		case 0b010010: 				// SKAN
+			if (ca != cr) 
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(ln+2,10)) // SCR +2
+			break;			
+		case 0b010101: 				// SKAG
+			if (ca > cr) 
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(ln+2,10)) // SCR +2
+			break;	
+		case 0b010110: 				// SKED
+			if (ca == cr) 
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(ln+2,10)) // SCR +2
+			else
+				ra = mathsop(2, ca, "0 00 000000000000000000000001")
+			break;	
+		case 0b010111: 				// SKEI
+			if (ca == cr) 
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(ln+2,10)) //
+			else
+				ra = mathsop(1, ca, "0 00 000000000000000000000001")
+			break;
+		case 0b011000:				// SHL
+			ra = mathsop(12,ca,cr)	
+			break;
+		case 0b011001:				// ROT
+			ra = mathsop(13,ca,cr)	
+			break;
+		case 0b011010:				// DSHL
+			//TBD	
+			break;
+		case 0b011011:				// DROT
+			//TBD	
+			break;
+		case 0b011100:				// POWR
+			ra = mathsop(8,ca,cr)	
+			break;
+		case 0b011101:				// DMULT
+			//TBD	
+			break;
+		case 0b011110:				// DIV
+			ra = mathsop(4,ca,cr)
+			put_memory(cpg, acc-1, mathsop(10,ca,cr))
+			break;		
+		case 0b011111:				// DDIV
+			// TBD
+			break;
+		case 0b100000:				// SWAP (NILX)
+			ra = cr
+			r  = ca
+			break;
+		case 0b101000: 				// PUT
+			r = ca
+			break;
+		case 0b101001: 				// PSQU
+			r = ca
+			if (cr.substr(2,2)=="00") {
+				// TBD need to set carry flag
+			}
+			break;
+		case 0b101010: 				// PNEG
+			r = mathsop(2, "0 00 000000000000000000000000", ca)
+			break;
+		case 0b101011: 				// PNOT
+			r = mathsop(11, ca, ca)
+			break;
+		case 0b101100: 				// PTYP
+			cr = eget_memory(pn,adr)
+			r = "0 " + ca.slice(-2) + cr.substr(4)
+			break;
+		case 0b101101: 				// PTYZ
+			r = "0 00 " + ca.substr(5)
+			break;
+		case 0b101111: 				// PIN
+			if (databuf == ""){
+				prompt="DATA* "
+				return "READ"
+			}
+			r = str_to_sword("&&&" + databuf.substr(0,1))
+			databuf=databuf.substr(1)			
+			break;
+		case 0b110000: 				// JUMP
+			eput_memory(pn, acc-1, MOCP  + "00000000" + tobinary(ln+1, 10) )
+			put_memory (pn, 7, MOCP  + "00000000" + tobinary(adr,10) ) // SCR
+			if (pbit != 0){ // i.e. JUMP 234'
+				cpg=pn
+			}
+			break;
+		case 0b110001: 				// JEZ
+			if (a==0)
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(adr,10))				
+			break;
+		case 0b110010: 				// JNZ
+			if (a!=0)
+				put_memory(cpg, 7, MOCP +  "00000000" + tobinary(adr,10))				
+			break;
+		case 0b110010: 				// JNZ
+			if (a!=0)
+				put_memory(cpg, 7, MOCP +  "00000000" + tobinary(adr,10))				
+			break;
+		case 0b110011: 				// JAT
+			if (ca.substr(2,2)=="00" || ca.substr(2,2)=="11" )
+				put_memory(cpg, 7, MOCP +  "00000000" + tobinary(adr,10))				
+			break;
+		case 0b110101: 				// JGZ
+			if (a>0)
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(adr,10))
+			break;
+		case 0b110110: 				// JZD
+			if (a==0)
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(adr,10))				
+			else
+				ra = mathsop(2, ca, "0 00 000000000000000000000001")
+			break;
+		case 0b110111: 				// JZI
+			if (a==0)
+				put_memory(cpg, 7, MOCP  + "00000000" + tobinary(adr,10))	
+			else
+				ra = mathsop(1, ca, "0 00 000000000000000000000001")			
+			break;			
+		case 0b111001: 				// INCR
+			r = ra = mathsop(1, cr, "0 00 000000000000000000000001")
+			break;
+		case 0b111000: 				// DECR
+			r = ra = mathsop(2, cr , "0 00 000000000000000000000001")
+			break;	
+		case 0b111110:				// EXEC
+			// TBD  execute(cr)
+			break;
+		case 0b111111: 				// EXTRA
+			switch (adr) {
+				case 1:  // SQRT
+					ra = mathsop(20,ca,cr)
+					break
+				case 4:  // READ
+					if (databuf == ""){
+						put_memory(cpg, 7, MOCP + "00000000" + tobinary(ln,10)) 
+						prompt="DATA* "
+						return "READ"
+					}
+					else {					
+						var p,t
+						if ((p=databuf.indexOf(",")) >=0) {
+							t = databuf.substr(0,p)
+							databuf=databuf.substr(p+1)
+						}
+						else {
+							t = databuf
+							databuf=""
+						}
+					
+						if ("0123456789+-".indexOf(t[0])>=0) {
+							if (t.indexOf(".")>=0)
+								ra = float_to_fword(t)
+							else
+								ra = "0 00 " + tobinary(t,24);
+						}
+						else {
+							ra = str_to_sword(t.substr(0,4))
+							if (t.length>4)
+								databuf=t.substr(4)
+						}						
+					}	
+					break;					
+				case 5:  // PRINT
+					places = get_memory(0,10)
+					print_mon(decompile(ca,1)+" ")
+					break
+				case 10: // STOP
+					print_mon("END OF PROGRAM\n")
+					return "STOP"
+				case 11: // LINE
+					print_mon( "\n")
+					break;
+				case 15: // CAPN
+					var c=1
+					var f=1
+					while (f) {
+						w= get_memory(cpg,ln+c)
+						if (w.substr(2,2)=="11") { // if string 
+							c = c+1
+							var tstr= "" ; 
+							for (var i=0; i<4; i++) {
+								n = parseInt(w.substr(5+i*6, 6),2)
+								if (n>0) tstr += Cmap.substr(n,1)
+							}
+							print_mon(tstr)
+						}
+						else
+							f = 0
+					}
+					put_memory(cpg, 7, MOCP  + "00000000" + tobinary(ln+c,10) )
+					break;
+				case 16: // PAGE
+					break;
+				case 17: // RND
+					break;
+				case 18: // ABS
+					break;							
+				case 21: // DATE
+					break;
+				case 22: // TIME
+					break;
+				default:
+			} 
+			break;
+		default:	
+			return "? NOT IMPLEMENTED loc: " +ln + ": [" + tobinary(ins,6) +"]"
+		}
+		
+		if (r !="") eput_memory(pn, adr, r)
+		if (ra!="") eput_memory(cpg, acc, ra)
+		
+		return ""	
+	}
+
+	
+	function assembler(str) {
+		abuffer=str
+		return assemble()
+	}
+	
+	var abuffer
+	function assemble() {
+		var assmb = "0 00 000000000000000000000000"; // NULL
+		// TAKE 3
+		// TAKE 3,*260'(4) ;comment
+		// +3
+		// +0.3
+		// "ABCD"
+		// TAKE [TAKE 3]
+		// TAKE +3
+		// TAKE "ABCD"
+		// TAKE FRED ; ASSUMING DECLARE FRED
+		
+		dbg=0
+
+		debug_out("assemble="+abuffer)
+		
+		var word=""
+		var number=""
+		
+		var qf=0
+		var nf=0
+		var ff=0
+		var xf=0
+		var af=0
+		var adf=0
+		var ibf=0
+		var pbf=0	
+		var eow=0
+		
+		var wordcount=0
+
+		while (abuffer != "") {
+			ch=abuffer.substr(0,1)
+			abuffer=abuffer.substr(1)
+			
+			if (ch>="A" && ch <="Z") {
+				if (nf==1) return "ERR"; // 123N
+				word=word.substr(0,3)
+				word += ch
+			}
+			else
+			if (ch>="0" && ch <="9") {
+				if (nf==1) number += ch; else word+= ch;
+			}			
+			else
+			if (qf==1) 
+			{
+				if (ch == "\"") {qf= 2; eow=1}
+				else
+					word += ch
+			}
+			else
+			switch (ch) {
+			case "+" :  // number (integer or floating point
+			case "-" :
+				if (nf==0){ nf=1;  number += ch ; }// else error
+				break;
+			case "." : // floating point
+				if (ff==0) {ff=1; number += ch ; } // else error
+				break;
+			case "\"" : // string start or end
+				eow=1
+				if (qf==0) qf=1; 
+				else {qf=2;}
+				break;
+			case "(" :	// index register start
+				if (xf==0) xf=1; // else error
+				eow=1
+				break;
+			case ")" :	// index register start
+				if (xf==1) xf=2; // else error
+				break;
+			case "[" :	
+				//literal
+				var p =assemble()
+				word = put_literal(p)
+				eow=1
+				break;
+			case "]" :	// end of literal
+				eow=1
+				break;
+			case "," :	// acc
+				eow=1
+				af=1
+				break;
+			case "*" :  // indirect bit
+				ibf=1
+				break;
+			case "'" :  // page bit
+				pbf=1
+				eow=1
+				break;
+			case ";" :	// comment ignore rest of line
+				abuffer=""
+				break;
+			case " " :	// comment ignore rest of line
+				eow=1
+				break;			
+			}
+			
+			if (abuffer=="" || eow) {
+
+				if (nf==0) 
+					console.log(wordcount+" word="+word)
+				else
+					console.log(wordcount+" num="+number)
+				
+				if (wordcount==1 && nf==1) { 
+					if (ff==1)
+						word = put_literal(float_to_fword(number))
+					else
+						word = put_literal("0 00 " + tobinary(number,24))
+					nf=0
+				}
+				
+				if (wordcount==0 && xf==2) {
+					if ("PIFS".indexOf(word[0])>=0) {
+						assmb=octaltoword(word)
+						xf=0
+					}						
+				}
+				
+				if (wordcount==1 && qf==2) { 
+					word = put_literal(str_to_sword(word))
+					qf=0
+				}
+
+				if (wordcount==0 && qf==2) {
+					wordcount++
+					assmb = str_to_sword(word)
+					qf=0
+				}
+				else if (wordcount==0 && nf==1) {
+					wordcount++
+					if (ff==1)
+						assmb = float_to_fword(number)
+					else
+						assmb = "0 00 " + tobinary(number,24)
+					nf=0
+				}				
+				else if (word !="" && wordcount==0 && nf==0 && qf==0) { // function
+					wordcount++
+					if ((i=Fncdata.indexOf(word))>=0) {
+						assmb = "0 10 " + tobinary(i/12,6) + "001" + "0".repeat(15)
+					}
+					else if ((i=Fncext.indexOf(word))>=0) {
+						assmb = "0 10 " + "11111100100000" + tobinary(1+i/4,10)
+					}
+					else {
+						; // error not match a function
+					}
+				}
+
+				else if (wordcount==1 && nf==0 && qf==0) { // acc, address or index reg 
+					if (!isNumeric(word)) {	
+						// check if declared word
+						var dw = str_to_sword(word)
+						var word=0
+						for (ml=1023; ml>topostack; ml-=2) {
+								if (get_memory(cpg,ml) == dw)
+									word = ml-1
+						}	
+					}						
+					if (af==1) { //acc
+						assmb = assmb.substr(0,11) + tobinary(word, 3) + assmb.substr(14)
+						af=0
+					} 
+					else if (xf==2) { // index reg
+						assmb = assmb.substr(0,14) + tobinary(word, 3) + assmb.substr(17)
+						xf=0
+					}
+					else { // address
+						adf+=1
+						if (ibf==1) assmb = assmb.substr(0,17) + "1" + assmb.substr(18)
+						if (pbf==1) assmb = assmb.substr(0,18) + "1" + assmb.substr(19)
+						if (adf==1) assmb = assmb.substr(0,19) + tobinary(word, 10)
+						console.log(adf + ": addr assmb="+assmb)
+					}
+				}
+				
+				eow=0
+				word=""
+				number=""
+			}
+		}
+		debug_out("Assmb="+assmb)		
+		debug_out("<"+decompile(assmb,0)+">")
+		
+		dbg=0
+		return assmb
+	}
+	var lastline=0
+	
+	function compiler(str) {
+		//DECLARE
+		//MESSAGE
+		// ===  TBD ======	
+		//LOOP
+		//REPEAT
+		//ASSIGN
+		//IF
+		//BREAK
+				
+		var r=str.split(" ")
+		if (isNumeric(r[0])) {
+			abuffer=str.substr(str.indexOf(" ")+1)
+			var pword = assemble()
+			if (pword != "")
+			{
+				n= Number(r[0])
+				if (n!=lastline) {
+					print_mon("%WARNING NOT IN SEQUENCE\n")
+				}
+
+				if (n>=0 && n<=1023) {
+					put_memory(cpg,n, pword)
+					lastline=n+1
+				}
+			}
+		}
+		
+		if (str.substr(0,8) =="DECLARE ") {
+			var v=str.substr(str.indexOf(" ")+1).split(",")
+			for (vn=0; vn<v.length; vn++) {
+				console.log("declare " + v[vn])
+				put_memory(cpg,topostack, str_to_sword(v[vn].trim(" ")))
+				topostack-=2
+			}
+			return
+		}
+		
+		if (str.substr(0,8) == "MESSAGE ") {
+			console.log("message ")
+			var v=str.split("\"")
+			//CAPN "string in blocks of 4"
+			pword=assembler("EXTA 15")
+			put_memory(cpg,lastline++, pword)
+			for (i=0; i<v[1].length; i+=4) {
+				sword=str_to_sword(v[1].substr(i,4))
+				put_memory(cpg,lastline++, sword)
+			}
+			return
+		}
+	}		
+
+	function do_action(s) {
+		var r = s.split(" ")
+		var n = 16
+		var message=""	
+		
+		if (r.length>1 && isNumeric(r[1]))
+			n=r[1];
+		
+		if (isNumeric(r[0])|| r[0]=="MESSAGE" || r[0]=="DECLARE") {
+			compiler(s)
+		}
+		else if (r[0]=="RUN" || r[0]=="STEP") {
+
+			put_memory(cpg,6,assembler("MOCP 128")) 	// hardware stack
+			put_memory(cpg,7,assembler("MOCP "+ n))		// scr
+			put_memory(0,10, assembler("+5"))			// places (print output)
+			put_memory(0,13, assembler("+3999893"))		// random number seed
+			ss=0
+			databuf=""
+			if (r[0]=="RUN")
+				do_execute().then(res => {console.log("success");print_prompt()})
+			else
+				print_mon("READY\n")
+			return
+		}
+		else if (s== "DATA") {
+			do_execute().then(res => {console.log("success");print_prompt()})
+			return
+		}	
+		else if (r[0] == "TRACE") {
+			if (n>0 && n<1024) {
+				w=get_memory(cpg,n)
+				put_memory(cpg,n, "1" + w.substr(1))
+			}
+		}
+		else if (r[0] == "REMOVE") {
+			if (n>0 && n<1024) {
+				w=get_memory(cpg,n)
+				put_memory(cpg,n, "0" + w.substr(1))
+			}
+		}		
+		else if (r[0]=="NEW") 	{
+			clr_memory()
+			if (r.length>1) {
+				put_memory(cpg,9, str_to_sword(r[1]))
+				put_memory(0,16+cpg, str_to_sword(r[1]))
+			}
+		}
+		else if (r[0]=="TAPE") {
+			message ="TAPE\n"
+			clr_memory()
+			tape = document.getElementById("program").value
+			lines=tape.split("\n")
+			for (const a of lines) {
+					compiler(a)
+			}
+		}
+		else
+			message = "ERR ?\n"
+		//refresh display	
+		print_mon(message)
+		print_prompt()
+		return
+	}
+	
+	function decompile(s,ppf) {
+		var str=""
+		
+		if (s.length<29) {
+			console.log("error s="+s);
+			return;
+		}
+		var t = s.substr(2,2)
+		switch (t) {
+		case "00" :
+			n = s.substr(6)
+			n = fromBinary(n,true); // parseInt (n,2)
+			if (ppf==0 && n==0)
+				str= "" ; 
+			else {
+				if (n>=0) str="+"
+				str += n;
+				}
+			break;
+		case "01" : 
+			str= parseFloat(fword_to_float(s)).toPrecision(5); 
+			break;
+		case "10" : 
+			ins = parseInt(s.substr(5,6),2)
+			acc = parseInt(s.substr(11,3),2)
+			if (acc==1) accs=" "; else accs=" "+acc+", "
+			ir  = parseInt(s.substr(14,3),2)
+			if (ir!=0) ir="("+ir+")"; else ir=""
+			ib  = s.substr(17,1)
+			if (ib=="1") ib="*"; else ib="";
+			pn  = s.substr(18,1)
+			if (pn=="1") pn="'" ; else pn="";
+			adr = parseInt(s.substr(19,10),2)
+			str = Fncdata.substr( ins * 12, 4) + accs + ib + adr + pn + ir
+			break;
+		case "11" : 
+			if (ppf) {
+				str= "" ; 
+				for (var i=0; i<4; i++) {
+					n = parseInt(s.substr(5+i*6, 6),2)
+					if (n>0) str += Cmap.substr(n,1)
+				}
+			}
+			else 
+				str= "\"" + sword_to_str(s) + "\"" ;
+
+			break;
+		}			
+		return str
+	}
+	
+	var kbd;
+	
+	function checkInput(event){
+		var srcField = event.srcElement;
+
+		event.preventDefault()
+		message = ""
+	
+	    if (typeof(srcField) !== "undefined" && srcField !== null) {
+			var inputLetter  = event.keyCode
+			if (inputLetter == 13)
+			{	
+				print_mon("\n")	
+				if (kbd==""  && !halt)
+					message = prompt
+				else {
+					if (prompt=="DATA* ")
+					{
+						prompt = "* "
+						databuf = kbd
+						kbd="DATA"
+					}
+
+					do_action(kbd)
+				}
+				kbd = ""				
+			}
+			else {
+				if (inputLetter >=97) 
+					inputLetter = inputLetter-32;
+				message = String.fromCharCode(inputLetter)
+				
+				kbd = kbd + message						
+			}
+			print_mon(message)
+		}	
+	}
+		
+	function checkBackspace(event){
+		var srcField = event.srcElement;
+
+	    if (typeof(srcField) !== "undefined" && srcField !== null) {
+			var inputLetter  = event.keyCode
+			
+			if (inputLetter==27) {halt = true; debug_out("halt called")}
+
+			if (inputLetter==8) {
+				if (kbd !="") {
+					kbd=kbd.slice(0,-1)
+				}
+				else
+					event.preventDefault()
+			}
+		}	
+	}	
+	
+	
+	/*****************************
+	
+		Start of PROGRAM
+		
+	******************************/
+
+	clr_memory();
+	
+	document.getElementById("monitor").addEventListener("keypress", checkInput);	
+	document.getElementById("monitor").addEventListener("keydown",  checkBackspace);
+	
+	print_mon("BBCX Version 1\nNEW OR OLD?\n")  
+	print_prompt()
+
+</script>
+
+
+
+<script>
+	/*****************************
+	
+		example programmes  "TAPES"
+		
+	******************************/
+const tapes = [";RECURSION\n\
+16 READ 2,\n\
+17 JUMP 7,100\n\
+18 STOP\n\
+100 DIV 2,+10\n\
+101 TAKE 6,1\n\
+102 JEZ 2,104\n\
+103 JUMP 7,100\n\
+104 ADD 6,+32\n\
+105 TOUT 6\n\
+106 JUMP *6\n",
+
+"2 +4\n\
+3 +7\n\
+7 MOCKP 54\n\
+30 \"ABCD\"\n\
+34 +8\n\
+54 ADD 3,*100(2) ;RESULT IN C(3) should be 15\n\
+100 MOCKP 30\n",
+
+"16 PUT 0,8\n\
+17 TAKE 2,+2\n\
+18 TAKE 5,+5\n\
+19 TAKE 3,+10\n\
+20 TAKE 3\n\
+21 DVD +10\n\
+22 PUT 2,10'\n\
+23 PRINT\n\
+24 PUT 5,10'\n\
+25 SQRT\n\
+26 PRINT\n\
+27 LINE\n\
+28 INCR 3\n\
+29 SKAG +20\n\
+30 JUMP 21\n\
+31 STOP\n",
+
+"16 TAKE [PUT 110]\n\
+17 PUT 21\n\
+18 TAKE [TAKE 101]\n\
+19 PUT 26\n\
+20 READ\n\
+21 PUT 110\n\
+22 DECR 21\n\
+23 NEQV [PUT 100]\n\
+24 JNZ 20\n\
+25 LINE\n\
+26 TAKE 101\n\
+27 PRINT\n\
+28 INCR 26\n\
+29 NEQV [TAKE 111]\n\
+30 JNZ 25\n\
+31 STOP\n",
+
+";HARDWARE STACK EXAMPLE\n\
+16 READ\n\
+17 SKAN \"STOP\"\n\
+18 JUMP 21\n\
+19 TAKE 6,1\n\
+20 JUMP 16\n\
+21 PUT 6,1\n\
+22 JEZ 26\n\
+23 PRINT\n\
+24 LINE\n\
+25 JUMP 21\n\
+26 STOP\n",
+
+"16 PIN 1\n\
+17 TAKE 100(1)\n\
+18 JEZ 16\n\
+19 TAKE 2,*1\n\
+20 JEZ 2,16\n\
+21 TOUT 0,2\n\
+22 JUMP 19\n\
+132 MOCKS 3,*200\n\
+133 MOCKS 3,*201(2)\n\
+134 MOCKS 3,*202(3)\n\
+135 MOCKS 3,*204\n\
+136 MOCKS 3,*205(3)\n\
+137 MOCKS 3,*207(1)\n\
+138 MOCKS 3,*208(3)\n\
+139 MOCKS 3,*210\n\
+140 MOCKS 3,*211(3)\n\
+141 MOCKS 3,*213(2)\n\
+142 MOCKS 3,*215\n\
+200 \"ZERO\"\n\
+201 \" &ON\"\n\
+202 \"E &T\"\n\
+203 \"WO &\"\n\
+204 \"THRE\"\n\
+205 \"E &F\"\n\
+206 \"OUR \"\n\
+207 \"&FIV\"\n\
+208 \"E &S\"\n\
+209 \"IX &\"\n\
+210 \"SEVE\"\n\
+211 \"N &E\"\n\
+212 \"IGHT\"\n\
+213 \" &NI\"\n\
+214 \"NE \""];
+
+function settape()
+{
+	n = document.getElementById("tape").value
+	document.getElementById("program").value=tapes[n-1]
+	return
+}
+
+settape(1)
+
+</script>
+
+
+
+
